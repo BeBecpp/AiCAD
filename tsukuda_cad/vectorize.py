@@ -181,6 +181,68 @@ def drop_light(raster, gray, segs, max_core=85):
     return keep
 
 
+def drop_dashed(segs, max_piece=1500, gap=(40, 450), min_run=3):
+    """Furniture outlines, ceiling zones and wiring are printed dashed; the building itself is not.
+    A run of >= min_run collinear pieces separated by regular gaps is a dashed line -> removed."""
+    groups = {}
+    for s in segs:
+        key = ('h', round(s.y1)) if s.horiz else ('v', round(s.x1))
+        groups.setdefault(key, []).append(s)
+    lo = lambda s, o: min(s.x1, s.x2) if o == 'h' else min(s.y1, s.y2)
+    hi = lambda s, o: max(s.x1, s.x2) if o == 'h' else max(s.y1, s.y2)
+    drop = set()
+    for (o, _), group in groups.items():
+        iv = sorted(group, key=lambda s: lo(s, o))
+        run = [iv[0]]
+        for prev, cur in zip(iv, iv[1:]):
+            if gap[0] <= lo(cur, o) - hi(prev, o) <= gap[1] and cur.length <= max_piece and prev.length <= max_piece:
+                run.append(cur)
+            else:
+                if len(run) >= min_run: drop.update(id(r) for r in run)
+                run = [cur]
+        if len(run) >= min_run: drop.update(id(r) for r in run)
+    return [s for s in segs if id(s) not in drop]
+
+
+def drop_isolated(segs, max_len=350, touch=60):
+    """Short pieces touching no longer line are lettering / symbol remains, not building lines."""
+    def box(s, pad=0):
+        x0, x1 = sorted((s.x1, s.x2)); y0, y1 = sorted((s.y1, s.y2))
+        return x0 - pad, y0 - pad, x1 + pad, y1 + pad
+    long_ = [s for s in segs if s.length > max_len]
+    out = list(long_)
+    for s in segs:
+        if s.length > max_len:
+            continue
+        a = box(s, touch)
+        if any(a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3] for b in map(box, long_)):
+            out.append(s)
+    return out
+
+
+def drop_floating(segs, touch=80, min_len=900, passes=3):
+    """Building lines meet other building lines at their ends (corners, T-junctions, jambs).
+    Long lines whose BOTH ends meet nothing are wiring runs / leader / dimension lines -> removed.
+    Repeated a few times so that chains of such lines disappear too."""
+    def ends(s): return [(s.x1, s.y1), (s.x2, s.y2)]
+    def touches(p, s):
+        x0, x1 = sorted((s.x1, s.x2)); y0, y1 = sorted((s.y1, s.y2))
+        return x0 - touch <= p[0] <= x1 + touch and y0 - touch <= p[1] <= y1 + touch
+    cur = list(segs)
+    for _ in range(passes):
+        keep = []
+        for s in cur:
+            if s.length < min_len or s.kind == 'grid':
+                keep.append(s); continue
+            free = [not any(o is not s and touches(p, o) for o in cur) for p in ends(s)]
+            if not all(free):
+                keep.append(s)
+        if len(keep) == len(cur):
+            break
+        cur = keep
+    return cur
+
+
 def line_raster(raster, segs, width_px=3):
     m = np.zeros(raster.img.shape[:2], np.uint8)
     for s in segs:

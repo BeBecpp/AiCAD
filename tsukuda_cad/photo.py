@@ -172,3 +172,20 @@ def refine_with_grid(R: Raster, grid_x, grid_y, step_mm=200, search_mm=80, deg=2
     img = cv2.remap(R.img, mapx.astype(np.float32), mapy.astype(np.float32), cv2.INTER_CUBIC, borderValue=(255, 255, 255))
     info = {'samples': len(sd) + len(td), 'rms_before_mm': round((bx + by) / 2, 1), 'rms_after_mm': round((ax + ay) / 2, 1)}
     return Raster(img, R.x0, R.y1, R.mmpp), info
+
+
+def fit_bubbles(cols_px, rows_px, col_mm, row_mm):
+    """Scans: register with the grid bubbles. A column bubble fixes X along its grid line, a row bubble
+    fixes Y, so fit a similarity (scale, rotation, translation; Y flipped):
+        X = p*xs + q*ys + tx ;  Y = q*xs - p*ys + ty
+    cols_px / rows_px: {name: (x, y)}, col_mm / row_mm: {name: mm}."""
+    A, b = [], []
+    for k, (xs, ys) in cols_px.items():
+        A.append([xs, ys, 1, 0]); b.append(col_mm[k])
+    for k, (xs, ys) in rows_px.items():
+        A.append([-ys, xs, 0, 1]); b.append(row_mm[k])
+    A, b = np.array(A, float), np.array(b, float)
+    (p, q, tx, ty), *_ = np.linalg.lstsq(A, b, rcond=None)
+    res = A @ np.array([p, q, tx, ty]) - b
+    H = np.array([[p, q, tx], [q, -p, ty], [0, 0, 1]])
+    return GridFit(H, float(np.sqrt((res ** 2).mean())), float(np.abs(res).max()), len(b))
