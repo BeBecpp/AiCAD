@@ -1,0 +1,6 @@
+numpy
+opencv-python
+ezdxf
+pymupdf
+shapely
+anthropic

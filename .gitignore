@@ -1,0 +1,19 @@
+# client drawings / job data never go to the (public) repo
+samples/
+output/
+jobs/
+PLAN.md
+*.dwg
+*.dxf
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.bin
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
